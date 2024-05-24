@@ -76,11 +76,12 @@ module Parse = struct
       | ( None
         , Some
             { pexp_desc=
+                (* CR modes *)
                 Pexp_constraint
                   ( { pexp_desc= Pexp_ident {txt= v_txt; _}
                     ; pexp_attributes= []
                     ; _ }
-                  , t1 )
+                  , Some t1, _ )
             ; pexp_attributes= []
             ; _ } )
         when enable_short_field_annot
@@ -90,11 +91,12 @@ module Parse = struct
       | ( Some (Pcoerce (None, t2))
         , Some
             { pexp_desc=
+                (* CR modes *)
                 Pexp_constraint
                   ( { pexp_desc= Pexp_ident {txt= v_txt; _}
                     ; pexp_attributes= []
                     ; _ }
-                  , t1 )
+                  , Some t1, _ )
             ; pexp_attributes= []
             ; _ } )
         when enable_short_field_annot
@@ -143,11 +145,12 @@ module Parse = struct
       | ( None
         , Some
             { ppat_desc=
+                (* CR modes *)
                 Ppat_constraint
                   ( { ppat_desc= Ppat_var {txt= v_txt; _}
                     ; ppat_attributes= []
                     ; _ }
-                  , t )
+                  , Some t, _ )
             ; ppat_attributes= []
             ; _ } )
         when enable_short_field_annot
@@ -180,9 +183,10 @@ module Parse = struct
           {e with ppat_desc= Ppat_record (fields, flag)}
       (* [(module M) : (module T)] -> [(module M : T)] *)
       | { ppat_desc=
+            (* CR modes *)
             Ppat_constraint
               ( {ppat_desc= Ppat_unpack (name, None); ppat_attributes= []; _}
-              , {ptyp_desc= Ptyp_package pt; ptyp_attributes= []; _} )
+              , Some {ptyp_desc= Ptyp_package pt; ptyp_attributes= []; _}, _)
         ; _ } as p ->
           {p with ppat_desc= Ppat_unpack (name, Some pt)}
       | p -> Ast_mapper.default_mapper.pat m p
@@ -223,12 +227,14 @@ module Parse = struct
           {e with pexp_desc= Pexp_infix (label_loc, m.expr m l, m.expr m r)}
       (* [(module M) : (module T)] -> [(module M : T)] *)
       | { pexp_desc=
+            (* CR modes *)
             Pexp_constraint
               ( { pexp_desc= Pexp_pack (name, None)
                 ; pexp_attributes= []
                 ; pexp_loc
                 ; _ }
-              , {ptyp_desc= Ptyp_package pt; ptyp_attributes= []; ptyp_loc; _}
+              , Some {ptyp_desc= Ptyp_package pt; ptyp_attributes= []; ptyp_loc; _}
+                , _
               )
         ; _ } as p
         when Migrate_ast.Location.compare_start ptyp_loc pexp_loc > 0 ->

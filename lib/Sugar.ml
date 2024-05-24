@@ -51,11 +51,13 @@ let decompose_arrow cmts ctx ctl ct2 =
     let ap =
       { pap_label= Nolabel
       ; pap_loc= ct2.ptyp_loc
-      ; pap_type= {ct2 with ptyp_attributes} }
+      ; pap_type= {ct2 with ptyp_attributes}
+      (* CR modes *)
+      ; pap_modes=[]}
     in
     (ap, local)
   in
-  let ctx_typ = Ptyp_arrow (List.map ~f:fst args, res_ap.pap_type) in
+  let ctx_typ = Ptyp_arrow (List.map ~f:fst args, res_ap.pap_type, res_ap.pap_modes) in
   let ctx =
     match ctx with
     | Typ cty -> Typ {cty with ptyp_desc= ctx_typ}
@@ -280,7 +282,8 @@ module Let_binding = struct
   let split_annot cmts xargs ({ast= body; _} as xbody) =
     let ctx = Exp body in
     match body.pexp_desc with
-    | Pexp_constraint (exp, typ)
+    (* CR modes *)
+    | Pexp_constraint (exp, Some typ, _)
       when Source.type_constraint_is_first typ exp.pexp_loc ->
         Cmts.relocate cmts ~src:body.pexp_loc ~before:exp.pexp_loc
           ~after:exp.pexp_loc ;
@@ -301,7 +304,8 @@ module Let_binding = struct
         , sub_exp ~ctx:exp_ctx exp )
     (* The type constraint is always printed before the declaration for
        functions, for other value bindings we preserve its position. *)
-    | Pexp_constraint (exp, typ) when not (List.is_empty xargs) ->
+    (* CR modes *)
+    | Pexp_constraint (exp, Some typ, _) when not (List.is_empty xargs) ->
         Cmts.relocate cmts ~src:body.pexp_loc ~before:exp.pexp_loc
           ~after:exp.pexp_loc ;
         ( xargs
@@ -427,7 +431,9 @@ module Let_binding = struct
               ; pvb_is_pun
               ; pvb_attributes= []
               ; pvb_loc= Location.none
-              ; pvb_constraint= None }
+              ; pvb_constraint= None
+              (* CR modes *)
+              ; pvb_modes = [] }
           in
           (is_local_pattern, fake_ctx, pat, sbody)
       | _ -> (false, ctx, pvb_pat, pvb_expr)
@@ -444,15 +450,17 @@ module Let_binding = struct
       (* recognize and undo the pattern of code introduced by
          ocaml/ocaml@fd0dc6a0fbf73323c37a73ea7e8ffc150059d6ff to fix
          https://caml.inria.fr/mantis/view.php?id=7344 *)
+      (* CR modes *)
       | ( Ppat_constraint
             ( ({ppat_desc= Ppat_var _; _} as pat)
-            , {ptyp_desc= Ptyp_poly ([], typ1); _} )
-        , Pexp_constraint (_, typ2) )
+            , Some {ptyp_desc= Ptyp_poly ([], typ1); _}, _ )
+        , Pexp_constraint (_, Some typ2, _) )
         when equal_core_type typ1 typ2 ->
           Cmts.relocate cmts ~src:lb_pat.ast.ppat_loc ~before:pat.ppat_loc
             ~after:pat.ppat_loc ;
           sub_pat ~ctx:(Pat lb_pat.ast) pat
-      | ( Ppat_constraint (_, {ptyp_desc= Ptyp_poly (_, typ1); _})
+      (* CR modes *)
+      | ( Ppat_constraint (_, Some {ptyp_desc= Ptyp_poly (_, typ1); _}, _)
         , Pexp_coerce (_, _, typ2) )
         when equal_core_type typ1 typ2 ->
           sub_pat ~ctx lb_pat.ast
@@ -470,7 +478,8 @@ module Let_binding = struct
       else
         let xpat =
           match xpat.ast.ppat_desc with
-          | Ppat_constraint (p, {ptyp_desc= Ptyp_poly ([], _); _}) ->
+          (* CR modes *)
+          | Ppat_constraint (p, Some {ptyp_desc= Ptyp_poly ([], _); _}, _) ->
               sub_pat ~ctx:xpat.ctx p
           | _ -> xpat
         in
@@ -484,8 +493,9 @@ module Let_binding = struct
     | {ppat_desc= Ppat_var _; ppat_attributes= []; _}, None -> true
     | _ -> false
 
+  (* CR cgunn *)
   let of_let_binding cmts ~ctx ~first
-      {pvb_pat; pvb_expr; pvb_constraint; pvb_is_pun; pvb_attributes; pvb_loc}
+        {pvb_pat; pvb_expr; pvb_constraint; pvb_is_pun; pvb_attributes; pvb_loc; pvb_modes=_}
       =
     let islocal, lb_pat, lb_exp =
       maybe_sugar_local cmts ~ctx pvb_pat pvb_expr pvb_is_pun pvb_constraint

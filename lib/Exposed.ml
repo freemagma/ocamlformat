@@ -14,7 +14,7 @@ open Extended_ast
 module Left = struct
   let rec core_type typ =
     match typ.ptyp_desc with
-    | Ptyp_arrow (t :: _, _) -> core_type t.pap_type
+    | Ptyp_arrow (t :: _, _, _) -> core_type t.pap_type
     | Ptyp_tuple l -> (
       match List.hd_exn l with
       | Some _, _ -> false
@@ -31,7 +31,7 @@ module Right = struct
     | {ptyp_attributes= _ :: _; _} -> false
     | {ptyp_desc; _} -> (
       match ptyp_desc with
-      | Ptyp_arrow (_, t) -> core_type t
+      | Ptyp_arrow (_, t, _) -> core_type t
       | Ptyp_tuple l -> (
         match List.last_exn l with
         | Some _, _ -> false
@@ -42,7 +42,8 @@ module Right = struct
   let constructor_arguments = function
     | Pcstr_record _ -> false
     | Pcstr_tuple args -> (
-      match List.last args with
+      (* CR modes *)
+      match List.last args |> Option.map ~f:(fun carg -> carg.pca_type) with
       | Some {ptyp_desc= Ptyp_arrow _; _} ->
           (* Arrows are wrapped in parens in this position:
 

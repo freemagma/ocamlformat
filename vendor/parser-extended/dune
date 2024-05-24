@@ -28,6 +28,7 @@
   GREATERRBRACKET
   --fixed-exception
   --table
+  --explain
   --strategy
   simplified)
  (modules parser))

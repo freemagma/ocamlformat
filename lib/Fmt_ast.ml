@@ -749,7 +749,8 @@ and fmt_type_cstr c ?constraint_ctx xtyp =
 and type_constr_and_body c xbody =
   let body = xbody.ast in
   match xbody.ast.pexp_desc with
-  | Pexp_constraint (exp, typ) ->
+  (* CR modes *)
+  | Pexp_constraint (exp, Some typ, []) ->
       Cmts.relocate c.cmts ~src:body.pexp_loc ~before:exp.pexp_loc
         ~after:exp.pexp_loc ;
       let typ_ctx = Exp body in
@@ -767,8 +768,9 @@ and type_constr_and_body c xbody =
 
 (* Jane street: This is used to print both arrow param types and arrow return
    types. The ~return parameter distinguishes. *)
+(* CR modes *)
 and fmt_arrow_param ~return c ctx
-    ({pap_label= lI; pap_loc= locI; pap_type= tI}, localI) =
+      ({pap_label= lI; pap_loc= locI; pap_type= tI; pap_modes=_}, localI) =
   let arg_label lbl =
     match lbl with
     | Nolabel -> if localI then Some (str "local_ ") else None
@@ -899,7 +901,8 @@ and fmt_core_type c ?(box = true) ?pro ?(pro_space = true) ?constraint_ctx
            $ fmt "@ as@ "
            $ fmt_type_var_with_parenze ~have_tick:true c str ) )
   | Ptyp_any -> str "_"
-  | Ptyp_arrow (args, ret_typ) ->
+  (* CR modes *)
+  | Ptyp_arrow (args, ret_typ, _) ->
       Cmts.relocate c.cmts ~src:ptyp_loc
         ~before:(List.hd_exn args).pap_type.ptyp_loc ~after:ret_typ.ptyp_loc ;
       let args, ret_typ, ctx =
@@ -1158,7 +1161,7 @@ and fmt_pattern ?ext c ?pro ?parens ?(box = false)
             in
             let punned_with_constraint =
               match pat.ast.ppat_desc with
-              | Ppat_constraint ({ppat_desc= Ppat_var var; _}, _) ->
+              | Ppat_constraint ({ppat_desc= Ppat_var var; _}, _, _) ->
                   String.equal var.txt lbl.txt
                   && List.is_empty pat.ast.ppat_attributes
               | _ -> false
@@ -1330,7 +1333,8 @@ and fmt_pattern ?ext c ?pro ?parens ?(box = false)
         $ fmt_or_k nested
             (fits_breaks (if parens then ")" else "") "")
             (fits_breaks (if parens then ")" else "") ~hint:(1, 2) ")") )
-  | Ppat_constraint (pat, typ) ->
+  (* CR modes *)
+  | Ppat_constraint (pat, Some typ, _) ->
       hvbox 2
         (Params.parens_if parens c.conf
            ( fmt_pattern c (sub_pat ~ctx pat)
@@ -1338,6 +1342,8 @@ and fmt_pattern ?ext c ?pro ?parens ?(box = false)
              | Exp {pexp_desc= Pexp_let _; _} -> fmt "@ : "
              | _ -> fmt " :@ " )
            $ fmt_core_type c (sub_typ ~ctx typ) ) )
+  (* CR modes *)
+  | Ppat_constraint (pat, None, _) -> fmt_pattern c (sub_pat ~ctx pat)
   | Ppat_type lid -> fmt_longident_loc c ~pre:"#" lid
   | Ppat_lazy pat ->
       cbox 2
@@ -1414,7 +1420,7 @@ and fmt_fun_args c args =
                     ( { ppat_desc= Ppat_var {txt; loc= _}
                       ; ppat_attributes= []
                       ; _ }
-                    , _ ) )
+                    , _, _ ) )
             ; ppat_attributes= []
             ; _ } as pat ) )
       when String.equal l.txt txt ->
@@ -1472,7 +1478,7 @@ and fmt_fun_args c args =
         , Optional l
         , Some exp
         , ( { ppat_desc=
-                Ppat_constraint ({ppat_desc= Ppat_var {txt; loc= _}; _}, _)
+                Ppat_constraint ({ppat_desc= Ppat_var {txt; loc= _}; _}, _, _)
             ; ppat_attributes= []
             ; _ } as pat ) )
       when String.equal l.txt txt ->
@@ -1638,7 +1644,7 @@ and fmt_label_arg ?(box = true) ?eol c (lbl, ({ast= arg; _} as xarg)) =
     when String.equal l.txt i && List.is_empty arg.pexp_attributes ->
       Cmts.fmt c loc @@ Cmts.fmt c ?eol arg.pexp_loc @@ fmt_label lbl ""
   | ( (Labelled l | Optional l)
-    , Pexp_constraint ({pexp_desc= Pexp_ident {txt= Lident i; _}; _}, _) )
+    , Pexp_constraint ({pexp_desc= Pexp_ident {txt= Lident i; _}; _}, _, _) )
     when String.equal l.txt i
          && List.is_empty arg.pexp_attributes
          && Ocaml_version.(
@@ -2375,7 +2381,8 @@ and fmt_expression c ?(box = true) ?(pro = noop) ?eol ?parens
           (parens || not (List.is_empty pexp_attributes))
           c.conf
           (fmt_constant c const $ fmt_atrs)
-  | Pexp_constraint (e, t) ->
+  (* CR modes *)
+  | Pexp_constraint (e, Some t, _) ->
       pro
       $ hvbox
           (Params.Indent.exp_constraint c.conf)
@@ -2385,6 +2392,9 @@ and fmt_expression c ?(box = true) ?(pro = noop) ?eol ?parens
                  $ fmt "@ : "
                  $ fmt_core_type c (sub_typ ~ctx t) )
              $ fmt_atrs ) )
+  (* CR modes *)
+  | Pexp_constraint (e, None, _) ->
+    fmt_expression c (sub_exp ~ctx e)
   | Pexp_construct ({txt= Lident (("()" | "[]") as txt); loc}, None) ->
       let opn = char txt.[0] and cls = char txt.[1] in
       pro
@@ -2828,7 +2838,7 @@ and fmt_expression c ?(box = true) ?(pro = noop) ?eol ?parens
             let punned_with_constraint =
               match exp.ast.pexp_desc with
               | Pexp_constraint
-                  ({pexp_desc= Pexp_ident {txt= Lident var; _}; _}, _) ->
+                  ({pexp_desc= Pexp_ident {txt= Lident var; _}; _}, _, _) ->
                   String.equal var lbl.txt
                   && List.is_empty exp.ast.pexp_attributes
               | _ -> false
@@ -3287,7 +3297,8 @@ and fmt_class_field_kind c ctx = function
         ; _ } ) -> (
       let rec cleanup names e args' =
         match (e, args') with
-        | {pexp_desc= Pexp_constraint (e, t); _}, [] ->
+        (* CR modes *)
+        | {pexp_desc= Pexp_constraint (e, Some t, _); _}, [] ->
             Some (List.rev names, t, e)
         | ( {pexp_desc= Pexp_newtype ((({txt; _}, _) as newtyp), body); _}
           , ({txt= txt'; _}, _) :: args )
@@ -3322,7 +3333,8 @@ and fmt_class_field_kind c ctx = function
       in
       let ty, e =
         match (xbody.ast, poly) with
-        | {pexp_desc= Pexp_constraint (e, t); pexp_loc; _}, None ->
+        (* CR modes *)
+        | {pexp_desc= Pexp_constraint (e, Some t, _); pexp_loc; _}, None ->
             Cmts.relocate c.cmts ~src:pexp_loc ~before:t.ptyp_loc
               ~after:e.pexp_loc ;
             (Some t, sub_exp ~ctx e)
@@ -3340,7 +3352,8 @@ and fmt_class_field_kind c ctx = function
   | Cfk_concrete (_, e) ->
       let ty, e =
         match e with
-        | {pexp_desc= Pexp_constraint (e, t); _} -> (Some t, e)
+        (* CR modes *)
+        | {pexp_desc= Pexp_constraint (e, Some t, _); _} -> (Some t, e)
         | _ -> (None, e)
       in
       ( opt ty (fun t -> fmt "@ : " $ fmt_core_type c (sub_typ ~ctx t))
@@ -3485,7 +3498,8 @@ and fmt_case c ctx ~first ~last case =
           $ p.close_paren_branch ) )
 
 and fmt_value_description ?ext c ctx vd =
-  let {pval_name= {txt; loc}; pval_type; pval_prim; pval_attributes; pval_loc}
+  (* CR cgunn *)
+  let {pval_name= {txt; loc}; pval_type; pval_prim; pval_attributes; pval_loc; pval_modalities=_}
       =
     vd
   in
@@ -3661,7 +3675,8 @@ and fmt_type_declaration c ?ext ?(pre = "") ?name ?(eq = "=") {ast= decl; _}
        $ doc_after )
 
 and fmt_label_declaration c ctx ?(last = false) decl =
-  let {pld_mutable; pld_name; pld_type; pld_loc; pld_attributes} = decl in
+  (* CR modes *)
+  let {pld_mutable; pld_name; pld_type; pld_loc; pld_attributes; pld_modalities=_} = decl in
   update_config_maybe_disabled c pld_loc pld_attributes
   @@ fun c ->
   let doc, atrs = doc_atrs pld_attributes in
@@ -3753,16 +3768,20 @@ and fmt_core_type_gf c ctx typ =
   $ fmt_core_type c (sub_typ ~ctx typ)
 
 and fmt_constructor_arguments ?vars c ctx ~pre = function
-  | Pcstr_tuple typs ->
+  | Pcstr_tuple cargs ->
+      (* CR modes: this is what's causing the comment placement change in [local.ml] *)
       let vars =
         match vars with Some vars -> fmt "@ " $ vars | None -> noop
-      and typs =
-        match typs with
+      and cargs =
+        match cargs with
         | [] -> noop
         | _ :: _ ->
-            fmt "@ " $ hvbox 0 (list typs "@ * " (fmt_core_type_gf c ctx))
+          fmt "@ " $ hvbox 0 (list cargs "@ * " (fun {pca_type; pca_loc; pca_modalities=_} ->
+
+            Cmts.fmt c pca_loc @@
+            fmt_core_type_gf c ctx pca_type))
       in
-      pre $ vars $ typs
+      pre $ vars $ cargs
   | Pcstr_record (loc, lds) ->
       let p = Params.get_record_type c.conf in
       let fmt_ld ~first ~last x =

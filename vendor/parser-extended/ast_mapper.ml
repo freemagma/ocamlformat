@@ -30,6 +30,8 @@ type mapper = {
   arg_label: mapper -> Asttypes.arg_label -> Asttypes.arg_label;
   attribute: mapper -> attribute -> attribute;
   attributes: mapper -> attribute list -> attribute list;
+  modes : mapper -> mode loc list -> mode loc list;
+  modalities : mapper -> modality loc list -> modality loc list;
   ext_attrs: mapper -> ext_attrs -> ext_attrs;
   binding_op: mapper -> binding_op -> binding_op;
   case: mapper -> case -> case;
@@ -188,11 +190,12 @@ module T = struct
     in
     Of.mk ~loc ~attrs desc
 
-  let map_arrow_param sub {pap_label; pap_loc; pap_type} =
+  let map_arrow_param sub {pap_label; pap_loc; pap_type; pap_modes} =
     let pap_label = sub.arg_label sub pap_label in
     let pap_loc = sub.location sub pap_loc in
     let pap_type = sub.typ sub pap_type in
-    {pap_label; pap_loc; pap_type}
+    let pap_modes = sub.modes sub pap_modes in
+    {pap_label; pap_loc; pap_type; pap_modes}
 
   let map sub {ptyp_desc = desc; ptyp_loc = loc; ptyp_attributes = attrs} =
     let open Typ in
@@ -201,9 +204,9 @@ module T = struct
     match desc with
     | Ptyp_any -> any ~loc ~attrs ()
     | Ptyp_var s -> var ~loc ~attrs (map_type_var sub s)
-    | Ptyp_arrow (params, t2) ->
+    | Ptyp_arrow (params, t2, m2) ->
         arrow ~loc ~attrs (List.map (map_arrow_param sub) params)
-          (sub.typ sub t2)
+          (sub.typ sub t2) (sub.modes sub m2)
     | Ptyp_tuple tyl ->
         tuple ~loc ~attrs (List.map (fun (lbl, t) -> map_opt (map_loc sub) lbl, sub.typ sub t) tyl)
     | Ptyp_constr (lid, tl) ->
@@ -257,8 +260,14 @@ module T = struct
     | Ptype_record l -> Ptype_record (List.map (sub.label_declaration sub) l)
     | Ptype_open -> Ptype_open
 
+  let map_constructor_argument sub x =
+    let pca_type = sub.typ sub x.pca_type in
+    let pca_loc = sub.location sub x.pca_loc in
+    let pca_modalities = sub.modalities sub x.pca_modalities in
+    { pca_type; pca_loc; pca_modalities }
+
   let map_constructor_arguments sub = function
-    | Pcstr_tuple l -> Pcstr_tuple (List.map (sub.typ sub) l)
+    | Pcstr_tuple l -> Pcstr_tuple (List.map (map_constructor_argument sub) l)
     | Pcstr_record (loc, l) ->
         let loc = sub.location sub loc in
         let l = List.map (sub.label_declaration sub) l in
@@ -598,8 +607,8 @@ module E = struct
     | Pexp_coerce (e, t1, t2) ->
         coerce ~loc ~attrs (sub.expr sub e) (map_opt (sub.typ sub) t1)
           (sub.typ sub t2)
-    | Pexp_constraint (e, t) ->
-        constraint_ ~loc ~attrs (sub.expr sub e) (sub.typ sub t)
+    | Pexp_constraint (e, t, m) ->
+        constraint_ ~loc ~attrs (sub.expr sub e) (Option.map (sub.typ sub) t) (sub.modes sub m)
     | Pexp_send (e, s) ->
         send ~loc ~attrs (sub.expr sub e) (map_loc sub s)
     | Pexp_new lid -> new_ ~loc ~attrs (map_loc sub lid)
@@ -711,8 +720,8 @@ module P = struct
         array ~loc ~attrs (Flag.map_mutable sub mf) (List.map (sub.pat sub) pl)
     | Ppat_list pl -> list ~loc ~attrs (List.map (sub.pat sub) pl)
     | Ppat_or pl -> or_ ~loc ~attrs (List.map (sub.pat sub) pl)
-    | Ppat_constraint (p, t) ->
-        constraint_ ~loc ~attrs (sub.pat sub p) (sub.typ sub t)
+    | Ppat_constraint (p, t, m) ->
+        constraint_ ~loc ~attrs (sub.pat sub p) (Option.map (sub.typ sub) t) (sub.modes sub m)
     | Ppat_type s -> type_ ~loc ~attrs (map_loc sub s)
     | Ppat_lazy p -> lazy_ ~loc ~attrs (sub.pat sub p)
     | Ppat_unpack (s, pt) ->
@@ -1014,4 +1023,10 @@ let default_mapper =
       (fun this p ->
          { prepl_phrase= this.toplevel_phrase this p.prepl_phrase
          ; prepl_output= p.prepl_output } );
+
+    modes = (fun this m ->
+      List.map (map_loc this) m);
+
+    modalities = (fun this m ->
+      List.map (map_loc this) m);
   }
